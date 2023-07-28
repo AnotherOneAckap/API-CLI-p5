@@ -30,12 +30,46 @@ sub from_openapi {
         %args,
     );
 
-    my $host = $self->openapi->{host};
-    my $scheme = $self->openapi->{schemes}->[0];
+    my $url;
 
-    my $basePath = $self->openapi->{basePath} // '';
-    $basePath = '' if $basePath eq '/';
-    my $url = URI->new("$scheme://$host$basePath$path");
+    my $openapi = $self->openapi;
+
+    if ($openapi->{openapi} =~ /^3\.0\.[0-9]+/) {
+        my $default_server = $openapi->{servers}[0];
+        my $base_url;
+
+        # server could be specified by index or by base url
+        # index in a list made of
+        # - servers in specification, see https://spec.openapis.org/oas/v3.0.3#openapi-object
+        # - servers in Path Item Object, see https://spec.openapis.org/oas/v3.0.3#fixed-fields-6
+        if (defined $opt->{server}) {
+            if ($opt->{server} =~ /^[0-9]+$/) {
+                my $global_servers = $openapi->{servers} || [];
+                my $local_servers = $openapi->{paths}{$path}{servers} || [];
+                my @all_servers = (@$global_servers, @$local_servers);
+                my $server = $all_servers[ $opt->{server} ];
+                die "Chosen server does not exists" unless defined $server;
+                $base_url = $server->{url};
+            }
+            else {
+                $base_url = $opt->{server};
+            }
+        }
+        else {
+            $base_url = $openapi->{servers}[0]{url};
+        }
+
+        $url = URI->new($base_url);
+    }
+    else {
+      my ($basePath,$host,$scheme);
+      $host     = $self->openapi->{host};
+      $scheme   = $self->openapi->{schemes}->[0];
+      $basePath = $self->openapi->{basePath} // '';
+      $basePath = '' if $basePath eq '/';
+      $url      = URI->new("$scheme://$host$basePath$path");
+    }
+
     my %query;
     for my $name (sort keys %$opt) {
         my $value = $opt->{ $name };
